@@ -1,0 +1,28 @@
+# Install dependencies only when needed
+FROM node:18-alpine3.17 AS devdeps
+WORKDIR /usr/src/app
+COPY package.json  ./
+RUN npm install
+
+FROM node:18-alpine3.17 AS builder
+WORKDIR /usr/src/app
+COPY --from=devdeps /usr/src/app/node_modules ./node_modules
+COPY . .
+RUN npm run prisma:generate
+RUN npm run build
+
+FROM node:18-alpine3.17 AS deps
+WORKDIR /usr/src/app
+COPY package.json  ./
+RUN npm install --omit=dev && npm cache clean --force 
+
+FROM node:18-alpine3.17 AS prod
+USER node
+WORKDIR /usr/src/app
+# COPY --chown=node:node --from=builder /usr/src/app/.env ./.env
+COPY --chown=node:node --from=deps /usr/src/app/node_modules ./node_modules
+COPY --chown=node:node --from=builder /usr/src/app/node_modules/.prisma/client ./node_modules/.prisma/client
+COPY --chown=node:node --from=builder /usr/src/app/dist/src ./src
+COPY --chown=node:node --from=builder /usr/src/app/prisma ./prisma
+COPY --chown=node:node package.json ./
+CMD [ "node", "src/main.js" ]
